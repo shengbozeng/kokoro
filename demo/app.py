@@ -4,18 +4,28 @@ import gradio as gr
 import os
 import random
 import torch
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir) # 更改工作目录到脚本所在目录
+# os.environ["http_proxy"] = "http://127.0.0.1:20171"
+# os.environ["https_proxy"] = "http://127.0.0.1:20171"
 
 CUDA_AVAILABLE = torch.cuda.is_available()
+DEFAULT_VOICE ='af_heart'
+print(f'Loading model ... ...',end='')
 models = {gpu: KModel().to('cuda' if gpu else 'cpu').eval() for gpu in [False] + ([True] if CUDA_AVAILABLE else [])}
+print(f'Done!')
+print(f'Loading Pipeline ... ...',end='')
 pipelines = {lang_code: KPipeline(lang_code=lang_code, model=False) for lang_code in 'ab'}
 pipelines['a'].g2p.lexicon.golds['kokoro'] = 'kˈOkəɹO'
 pipelines['b'].g2p.lexicon.golds['kokoro'] = 'kˈQkəɹQ'
+
+print(f'Done!')
 
 @spaces.GPU(duration=30)
 def forward_gpu(ps, ref_s, speed):
     return models[True](ps, ref_s, speed)
 
-def generate_first(text, voice='af_heart', speed=1, use_gpu=CUDA_AVAILABLE):
+def generate_first(text, voice=DEFAULT_VOICE, speed=1, use_gpu=CUDA_AVAILABLE):
     pipeline = pipelines[voice[0]]
     pack = pipeline.load_voice(voice)
     use_gpu = use_gpu and CUDA_AVAILABLE
@@ -37,16 +47,16 @@ def generate_first(text, voice='af_heart', speed=1, use_gpu=CUDA_AVAILABLE):
     return None, ''
 
 # Arena API
-def predict(text, voice='af_heart', speed=1):
+def predict(text, voice=DEFAULT_VOICE, speed=1):
     return generate_first(text, voice, speed, use_gpu=False)[0]
 
-def tokenize_first(text, voice='af_heart'):
+def tokenize_first(text, voice=DEFAULT_VOICE):
     pipeline = pipelines[voice[0]]
     for _, ps, _ in pipeline(text, voice):
         return ps
     return ''
 
-def generate_all(text, voice='af_heart', speed=1, use_gpu=CUDA_AVAILABLE):
+def generate_all(text, voice=DEFAULT_VOICE, speed=1, use_gpu=CUDA_AVAILABLE):
     pipeline = pipelines[voice[0]]
     pack = pipeline.load_voice(voice)
     use_gpu = use_gpu and CUDA_AVAILABLE
@@ -115,6 +125,7 @@ CHOICES = {
 '🇬🇧 🚹 Daniel': 'bm_daniel',
 }
 for v in CHOICES.values():
+    print(f'Load voice {v}')
     pipelines[v[0]].load_voice(v)
 
 TOKEN_NOTE = '''
@@ -154,7 +165,7 @@ with gr.Blocks() as app:
         with gr.Column():
             text = gr.Textbox(label='Input Text', info=f"Arbitrarily many characters supported")
             with gr.Row():
-                voice = gr.Dropdown(list(CHOICES.items()), value='af_heart', label='Voice', info='Quality and availability vary by language')
+                voice = gr.Dropdown(list(CHOICES.items()), value=DEFAULT_VOICE, label='Voice', info='Quality and availability vary by language')
                 use_gpu = gr.Dropdown(
                     [('ZeroGPU 🚀', True), ('CPU 🐌', False)],
                     value=CUDA_AVAILABLE,

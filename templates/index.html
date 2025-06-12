@@ -1,0 +1,28 @@
+<!--
+ * @Author: Zeng Shengbo shengbo.zeng@ailingues.com
+ * @Date: 2025-06-05 19:05:30
+ * @LastEditors: Zeng Shengbo shengbo.zeng@ailingues.com
+ * @LastEditTime: 2025-06-05 19:05:35
+ * @FilePath: \\kokoro\\templates\\index.html
+ * @Description: 
+-->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>TTS Web App</title>
+</head>
+<body>
+  <h1>Text to Speech</h1>
+  <form action="/synthesize" method="post">
+    <textarea name="text" rows="4" cols="50">Hello, this is Kokoro TTS!</textarea><br/>
+    <label for="voice">Voice:</label>
+    <input name="voice" value="af_heart"><br/>
+    <label for="speed">Speed:</label>
+    <input name="speed" type="number" step="0.1" value="1.0"><br/>
+    <label for="use_gpu">Use GPU:</label>
+    <input name="use_gpu" type="checkbox"><br/>
+    <button type="submit">Generate</button>
+  </form>
+</body>
+</html>
