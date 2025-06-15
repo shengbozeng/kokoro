@@ -33,14 +33,17 @@ CUDA_AVAILABLE = torch.cuda.is_available()
 DEFAULT_VOICE ='af_heart'
 # 自动判断设备，如果没有 GPU 则使用 CPU
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-print(f'Loading text to speech model... ... ',end='')
-# 加载模型并映射到合适的设备
-model = KModel(
-    repo_id='hexgrad/kokoro-82M',
-    config="/models/hexgrad/kokoro-82M/config.json",
-    model="/models/hexgrad/kokoro-82M/kokoro-v1_0.pth"
-).to(device).eval()
-print(f'Done!')
+print(f'Loading text to speech model on {device}... ', end='', flush=True)
+
+try:
+    model = KModel(
+        repo_id='hexgrad/kokoro-82M',
+        config="/models/hexgrad/kokoro-82M/config.json",
+        model="/models/hexgrad/kokoro-82M/kokoro-v1_0.pth"
+    ).to(device).eval()
+    print('Done!')
+except Exception as e:
+    print(f'Failed! Error: {e}')
 print(f'Loading Pipeline... ... ',end='')
 pipelines = {lang_code: KPipeline(lang_code=lang_code,repo_id='hexgrad/kokoro-82M', model=False) for lang_code in 'ab'}
 pipelines['a'].g2p.lexicon.golds['kokoro'] = 'kˈOkəɹO'
