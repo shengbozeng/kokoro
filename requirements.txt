@@ -57,7 +57,7 @@ Jinja2==3.1.4
 joblib==1.5.1
 jsonschema==4.24.0
 jsonschema-specifications==2025.4.1
-kokoro @ file:///projects/projects/kokoro
+kokoro @ file:///ai/projects/kokoro
 langcodes==3.5.0
 language-tags==1.2.0
 language_data==1.3.0
