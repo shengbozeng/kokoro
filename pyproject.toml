@@ -23,7 +23,8 @@ dependencies = [
     "misaki[en]>=0.9.4",
     "numpy",
     "torch",
-    "transformers"
+    "transformers",
+    "spaces>=0.36.0","opencv-python>=4.11.0.86"
 ]
 
 [project.scripts]
