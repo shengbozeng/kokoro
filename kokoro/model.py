@@ -5,6 +5,7 @@ from huggingface_hub import hf_hub_download
 from loguru import logger
 from transformers import AlbertConfig
 from typing import Dict, Optional, Union
+import os
 import json
 import torch
 
@@ -63,8 +64,15 @@ class KModel(torch.nn.Module):
             dim_in=config['hidden_dim'], style_dim=config['style_dim'],
             dim_out=config['n_mels'], disable_complex=disable_complex, **config['istftnet']
         )
-        if not model:
+        
+        # 模型文件加载逻辑
+        if model and os.path.exists(model):
+            logger.info(f"Loading model from local path: {model}")
+        else:
+            logger.info("Model not provided or not found. Downloading from HuggingFace.")
             model = hf_hub_download(repo_id=repo_id, filename=KModel.MODEL_NAMES[repo_id])
+        # if not model:
+        #     model = hf_hub_download(repo_id=repo_id, filename=KModel.MODEL_NAMES[repo_id])
         for key, state_dict in torch.load(model, map_location='cpu', weights_only=True).items():
             assert hasattr(self, key), key
             try:
