@@ -1,64 +1,48 @@
 import spaces
-from kokoro import KModel, KPipeline
+from components.audio import (
+    AUDIO_CHOICES,
+    DEFAULT_VOICE,
+    TOKEN_NOTE,
+    generate_all,
+    generate_first,
+    get_frankenstein,
+    get_gatsby,
+    get_random_quote,
+    predict,
+    tokenize_first,
+)
 import gradio as gr
 import os
-import random
 import torch
 import colorsys
-import random
 import cv2
 from PIL import Image, ImageDraw, ImageFont
-import time
 import numpy as np
 import uuid
-from huggingface_hub import hf_hub_download
-# from inference import YOLOv10
 
 SUBSAMPLE = 2
 
 # os.environ["http_proxy"] = "http://127.0.0.1:20171"
 # os.environ["https_proxy"] = "http://127.0.0.1:20171"
-# 
+#
 from transformers import RTDetrForObjectDetection, RTDetrImageProcessor
-script_dir = os.path.dirname(os.path.abspath(__file__)) # 当前脚本所在目录
-os.chdir(script_dir) # 更改工作目录到脚本所在目录
+
+script_dir = os.path.dirname(os.path.abspath(__file__))  # 当前脚本所在目录
+os.chdir(script_dir)  # 更改工作目录到脚本所在目录
 
 css = """.my-group {max-width: 600px !important; max-height: 600px !important;}
          .my-column {display: flex !important; justify-content: center !important; align-items: center !important;}"""
-repo_id='hexgrad/kokoro-82M',
-config_json="/models/hexgrad/kokoro-82M/config.json",
-model_pth="/models/hexgrad/kokoro-82M/kokoro-v1_0.pth"
-         
+repo_id = ("hexgrad/kokoro-82M",)
+config_json = ("/models/hexgrad/kokoro-82M/config.json",)
+model_pth = "/models/hexgrad/kokoro-82M/kokoro-v1_0.pth"
+
 CUDA_AVAILABLE = torch.cuda.is_available()
-DEFAULT_VOICE ='af_heart'
-# 自动判断设备，如果没有 GPU 则使用 CPU
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-print(f'Loading text to speech model on {device}... ', end='', flush=True)
-
-try:
-    model = KModel(
-        repo_id='hexgrad/kokoro-82M',
-        config="/models/hexgrad/kokoro-82M/config.json",
-        model="/models/hexgrad/kokoro-82M/kokoro-v1_0.pth"
-    ).to(device).eval()
-    print('Done!')
-except Exception as e:
-    print(f'Failed! Error: {e}')
-print(f'Loading Pipeline... ... ',end='')
-pipelines = {lang_code: KPipeline(lang_code=lang_code,repo_id='hexgrad/kokoro-82M', model=False) for lang_code in 'ab'}
-pipelines['a'].g2p.lexicon.golds['kokoro'] = 'kˈOkəɹO'
-pipelines['b'].g2p.lexicon.golds['kokoro'] = 'kˈQkəɹQ'
-
-print(f'Done!')
 
 
-print(f"Loading image process model... ... ",end='')
+print(f"Loading image process model... ... ", end="")
 image_processor = RTDetrImageProcessor.from_pretrained("PekingU/rtdetr_r50vd")
 model = RTDetrForObjectDetection.from_pretrained("PekingU/rtdetr_r50vd").to("cuda")
-print(f'Done!')
-
-def convert_float32_to_int16(audio_float):
-    return (np.clip(audio_float, -1.0, 1.0) * 32767).astype(np.int16)
+print(f"Done!")
 
 
 def get_color(label):
@@ -84,7 +68,7 @@ def draw_bounding_boxes(image, results: dict, model, threshold=0.3):
             color = get_color(label)
 
             # Draw bounding box
-            draw.rectangle(box, outline=color, width=3) # type: ignore
+            draw.rectangle(box, outline=color, width=3)  # type: ignore
 
             # Prepare text
             text = f"{label}: {score:.2f}"
@@ -94,8 +78,8 @@ def draw_bounding_boxes(image, results: dict, model, threshold=0.3):
 
             # Draw text background
             draw.rectangle(
-                [box[0], box[1] - text_height - 4, box[0] + text_width, box[1]], # type: ignore
-                fill=color, # type: ignore
+                [box[0], box[1] - text_height - 4, box[0] + text_width, box[1]],  # type: ignore
+                fill=color,  # type: ignore
             )
 
             # Draw text
@@ -103,16 +87,17 @@ def draw_bounding_boxes(image, results: dict, model, threshold=0.3):
 
     return image
 
+
 @spaces.GPU
-def stream_object_detection(video, conf_threshold):
+def stream_object_detection_from_video(video, conf_threshold):
     cap = cv2.VideoCapture(video)
 
     # This means we will output mp4 videos
-    video_codec = cv2.VideoWriter_fourcc(*"mp4v") # type: ignore
+    video_codec = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore
     fps = int(cap.get(cv2.CAP_PROP_FPS))
 
     desired_fps = fps // SUBSAMPLE
-    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) // 2
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) // 2
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) // 2
 
     iterating, frame = cap.read()
@@ -123,11 +108,11 @@ def stream_object_detection(video, conf_threshold):
     output_video_name = f"output_{uuid.uuid4()}.mp4"
 
     # Output Video
-    output_video = cv2.VideoWriter(output_video_name, video_codec, desired_fps, (width, height)) # type: ignore
+    output_video = cv2.VideoWriter(output_video_name, video_codec, desired_fps, (width, height))  # type: ignore
     batch = []
 
     while iterating:
-        frame = cv2.resize( frame, (0,0), fx=0.5, fy=0.5)
+        frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         if n_frames % SUBSAMPLE == 0:
             batch.append(frame)
@@ -140,10 +125,13 @@ def stream_object_detection(video, conf_threshold):
             boxes = image_processor.post_process_object_detection(
                 outputs,
                 target_sizes=torch.tensor([(height, width)] * len(batch)),
-                threshold=conf_threshold)
-            
+                threshold=conf_threshold,
+            )
+
             for i, (array, box) in enumerate(zip(batch, boxes)):
-                pil_image = draw_bounding_boxes(Image.fromarray(array), box, model, conf_threshold)
+                pil_image = draw_bounding_boxes(
+                    Image.fromarray(array), box, model, conf_threshold
+                )
                 frame = np.array(pil_image)
                 # Convert RGB to BGR
                 frame = frame[:, :, ::-1].copy()
@@ -153,154 +141,154 @@ def stream_object_detection(video, conf_threshold):
             output_video.release()
             yield output_video_name
             output_video_name = f"output_{uuid.uuid4()}.mp4"
-            output_video = cv2.VideoWriter(output_video_name, video_codec, desired_fps, (width, height)) # type: ignore
+            output_video = cv2.VideoWriter(output_video_name, video_codec, desired_fps, (width, height))  # type: ignore
 
         iterating, frame = cap.read()
         n_frames += 1
-        
-@spaces.GPU(duration=30)
-def forward_gpu(ps, ref_s, speed):
-    return models[True](ps, ref_s, speed)
 
-def generate_first(text, voice=DEFAULT_VOICE, speed=1, use_gpu=CUDA_AVAILABLE):
-    pipeline = pipelines[voice[0]]
-    pack = pipeline.load_voice(voice)
-    use_gpu = use_gpu and CUDA_AVAILABLE
-    for _, ps, _ in pipeline(text, voice, speed):
-        ref_s = pack[len(ps)-1]
-        try:
-            if use_gpu:
-                audio = forward_gpu(ps, ref_s, speed)
-            else:
-                audio = models[False](ps, ref_s, speed)
-        except gr.exceptions.Error as e:
-            if use_gpu:
-                gr.Warning(str(e))
-                gr.Info('Retrying with CPU. To avoid this error, change Hardware to CPU.')
-                audio = models[False](ps, ref_s, speed)
-            else:
-                raise gr.Error(e)
-         # ✅ 手动转 int16
-        int16_audio = convert_float32_to_int16(audio.numpy())
-        return (24000, int16_audio), ps
-    return None, ''
 
-# Arena API
-def predict(text, voice=DEFAULT_VOICE, speed=1):
-    return generate_first(text, voice, speed, use_gpu=False)[0]
+recognition_active = False  # 全局状态变量
 
-def tokenize_first(text, voice=DEFAULT_VOICE):
-    pipeline = pipelines[voice[0]]
-    for _, ps, _ in pipeline(text, voice):
-        return ps
-    return ''
+@spaces.GPU
+def detect_frame_controlled_for_display(frame, conf_threshold):
+    print("Frame received:", frame.shape)
+    """处理每帧：返回识别后图像（用于 Image 显示）"""
+    if not recognition_active:
+        return frame  # 返回原图像（RGB）
 
-def generate_all(text, voice=DEFAULT_VOICE, speed=1, use_gpu=CUDA_AVAILABLE):
-    pipeline = pipelines[voice[0]]
-    pack = pipeline.load_voice(voice)
-    use_gpu = use_gpu and CUDA_AVAILABLE
-    first = True
-    for _, ps, _ in pipeline(text, voice, speed):
-        ref_s = pack[len(ps)-1]
-        try:
-            if use_gpu:
-                audio = forward_gpu(ps, ref_s, speed)
-            else:
-                audio = models[False](ps, ref_s, speed)
-        except gr.exceptions.Error as e:
-            if use_gpu:
-                gr.Warning(str(e))
-                gr.Info('Switching to CPU')
-                audio = models[False](ps, ref_s, speed)
-            else:
-                raise gr.Error(e)
-        # ✅ 手动转 int16
-        int16_audio = convert_float32_to_int16(audio.numpy())
-        yield 24000, int16_audio
-        
-        if first:
-            first = False
-            yield 24000, convert_float32_to_int16(torch.zeros(1).numpy())
+    resized = cv2.resize(frame, (640, 640))
+    inputs = image_processor(images=[resized], return_tensors="pt").to("cuda")
 
-with open('en.txt', 'r') as r:
-    random_quotes = [line.strip() for line in r]
+    with torch.no_grad():
+        outputs = model(**inputs)
 
-def get_random_quote():
-    return random.choice(random_quotes)
+    boxes = image_processor.post_process_object_detection(
+        outputs,
+        target_sizes=torch.tensor([[640, 640]]),
+        threshold=conf_threshold,
+    )
 
-def get_gatsby():
-    with open('gatsby5k.md', 'r', encoding='utf-8', errors='ignore') as r:
-        s=r.read()
-        return s.strip()
+    # 绘制框
+    pil_image = draw_bounding_boxes(Image.fromarray(resized), boxes[0], model, conf_threshold)
+    print("Returning frame shape:", np.array(pil_image).shape)
+    return np.array(pil_image)  # RGB ndarray
 
-def get_frankenstein():
-    with open('frankenstein5k.md', 'r', encoding='utf-8', errors='ignore') as r:
-        s=r.read()
-        return s.strip()
 
-CHOICES = {
-'🇺🇸 🚺 Heart ❤️': 'af_heart',
-'🇺🇸 🚺 Bella 🔥': 'af_bella',
-'🇺🇸 🚺 Nicole 🎧': 'af_nicole',
-'🇺🇸 🚺 Aoede': 'af_aoede',
-'🇺🇸 🚺 Kore': 'af_kore',
-'🇺🇸 🚺 Sarah': 'af_sarah',
-'🇺🇸 🚺 Nova': 'af_nova',
-'🇺🇸 🚺 Sky': 'af_sky',
-'🇺🇸 🚺 Alloy': 'af_alloy',
-'🇺🇸 🚺 Jessica': 'af_jessica',
-'🇺🇸 🚺 River': 'af_river',
-'🇺🇸 🚹 Michael': 'am_michael',
-'🇺🇸 🚹 Fenrir': 'am_fenrir',
-'🇺🇸 🚹 Puck': 'am_puck',
-'🇺🇸 🚹 Echo': 'am_echo',
-'🇺🇸 🚹 Eric': 'am_eric',
-'🇺🇸 🚹 Liam': 'am_liam',
-'🇺🇸 🚹 Onyx': 'am_onyx',
-'🇺🇸 🚹 Santa': 'am_santa',
-'🇺🇸 🚹 Adam': 'am_adam',
-'🇬🇧 🚺 Emma': 'bf_emma',
-'🇬🇧 🚺 Isabella': 'bf_isabella',
-'🇬🇧 🚺 Alice': 'bf_alice',
-'🇬🇧 🚺 Lily': 'bf_lily',
-'🇬🇧 🚹 George': 'bm_george',
-'🇬🇧 🚹 Fable': 'bm_fable',
-'🇬🇧 🚹 Lewis': 'bm_lewis',
-'🇬🇧 🚹 Daniel': 'bm_daniel',
-}
-for v in CHOICES.values():
-    print(f'Load voice {v}... ... ',end='')
-    pipelines[v[0]].load_voice(v)
-    print(f'Done!')
+def detect_frame_controlled(frame, conf_threshold):
+    if not recognition_active:
+        return frame  # 不处理，原样返回
 
-TOKEN_NOTE = '''
-💡 Customize pronunciation with Markdown link syntax and /slashes/ like `[Kokoro](/kˈOkəɹO/)`
+    resized = cv2.resize(frame, (640, 640))
+    result = model.detect_objects(resized, conf_threshold)
+    return cv2.resize(result, (320, 320))[:, :, ::-1]
 
-💬 To adjust intonation, try punctuation `;:,.!?—…"()“”` or stress `ˈ` and `ˌ`
 
-⬇️ Lower stress `[1 level](-1)` or `[2 levels](-2)`
+# 假设你有 YOLOv10 + detect_objects 结构
+@spaces.GPU
+def detect_frame(frame: np.ndarray, conf_threshold: float = 0.3):
+    resized = cv2.resize(frame, (640, 640))
+    result = model.detect_objects(resized, conf_threshold)
+    # 压缩返回帧（RGB）
+    display_frame = cv2.resize(result, (320, 320))
+    return display_frame[:, :, ::-1]  # BGR → RGB
 
-⬆️ Raise stress 1 level `[or](+2)` 2 levels (only works on less stressed, usually short words)
-'''
+
+def toggle_recognition():
+    global recognition_active
+    recognition_active = not recognition_active
+    return "Stop Detection" if recognition_active else "Start Detection"
+
+@spaces.GPU
+def stream_object_detection_from_camera(conf_threshold=0.3):
+    cap = cv2.VideoCapture(0)  # 使用默认摄像头
+
+    if not cap.isOpened():
+        raise RuntimeError("无法打开摄像头")
+
+    video_codec = cv2.VideoWriter_fourcc(*"mp4v")
+    fps = 15  # 摄像头理想帧率
+    width = 320
+    height = 240
+
+    output_video_name = f"camera_output_{uuid.uuid4()}.mp4"
+    output_video = cv2.VideoWriter(
+        output_video_name, video_codec, fps // SUBSAMPLE, (width, height)
+    )
+
+    n_frames = 0
+    batch = []
+
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+
+        frame = cv2.resize(frame, (width, height))
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        if n_frames % SUBSAMPLE == 0:
+            batch.append(frame)
+
+        if len(batch) >= fps:  # 每次处理1秒的视频
+            inputs = image_processor(images=batch, return_tensors="pt").to("cuda")
+
+            with torch.no_grad():
+                outputs = model(**inputs)
+
+            boxes = image_processor.post_process_object_detection(
+                outputs,
+                target_sizes=torch.tensor([(height, width)] * len(batch)),
+                threshold=conf_threshold,
+            )
+
+            for array, box in zip(batch, boxes):
+                pil_image = draw_bounding_boxes(
+                    Image.fromarray(array), box, model, conf_threshold
+                )
+                output_frame = np.array(pil_image)[:, :, ::-1]  # RGB -> BGR
+                output_video.write(output_frame)
+
+            yield output_video_name
+            output_video_name = f"camera_output_{uuid.uuid4()}.mp4"
+            output_video = cv2.VideoWriter(
+                output_video_name, video_codec, fps // SUBSAMPLE, (width, height)
+            )
+            batch = []
+
+        n_frames += 1
+
+    cap.release()
+    output_video.release()
+
 
 with gr.Blocks() as generate_tab:
-    out_audio = gr.Audio(label='Output Audio', interactive=False, streaming=False, autoplay=True)
-    generate_btn = gr.Button('Generate', variant='primary')
-    with gr.Accordion('Output Tokens', open=True):
-        out_ps = gr.Textbox(interactive=False, show_label=False, info='Tokens used to generate the audio, up to 510 context length.')
-        tokenize_btn = gr.Button('Tokenize', variant='secondary')
+    out_audio = gr.Audio(
+        label="Output Audio", interactive=False, streaming=False, autoplay=True
+    )
+    generate_btn = gr.Button("Generate", variant="primary")
+    with gr.Accordion("Output Tokens", open=True):
+        out_ps = gr.Textbox(
+            interactive=False,
+            show_label=False,
+            info="Tokens used to generate the audio, up to 510 context length.",
+        )
+        tokenize_btn = gr.Button("Tokenize", variant="secondary")
         gr.Markdown(TOKEN_NOTE)
-        predict_btn = gr.Button('Predict', variant='secondary', visible=False)
+        predict_btn = gr.Button("Predict", variant="secondary", visible=False)
 
-STREAM_NOTE = ['⚠️ There is an unknown Gradio bug that might yield no audio the first time you click `Stream`.']
-STREAM_NOTE = '\n\n'.join(STREAM_NOTE)
+STREAM_NOTE = [
+    "⚠️ There is an unknown Gradio bug that might yield no audio the first time you click `Stream`."
+]
+STREAM_NOTE = "\n\n".join(STREAM_NOTE)
 
 with gr.Blocks() as stream_tab:
-    out_stream = gr.Audio(label='Output Audio Stream', interactive=False, streaming=True, autoplay=True)
+    out_stream = gr.Audio(
+        label="Output Audio Stream", interactive=False, streaming=True, autoplay=True
+    )
     with gr.Row():
-        stream_btn = gr.Button('Stream', variant='primary')
-        stop_btn = gr.Button('Stop', variant='stop')
-    with gr.Accordion('Note', open=True):
+        stream_btn = gr.Button("Stream", variant="primary")
+        stop_btn = gr.Button("Stop", variant="stop")
+    with gr.Accordion("Note", open=True):
         gr.Markdown(STREAM_NOTE)
         gr.DuplicateButton()
 
@@ -310,7 +298,8 @@ with gr.Blocks(css=css) as stream_video:
     <h1 style='text-align: center'>
     Video Object Detection with <a href='https://huggingface.co/PekingU/rtdetr_r101vd_coco_o365' target='_blank'>RT-DETR</a>
     </h1>
-    """)
+    """
+    )
     with gr.Row():
         with gr.Column():
             video = gr.Video(label="Video Source")
@@ -322,44 +311,109 @@ with gr.Blocks(css=css) as stream_video:
                 value=0.30,
             )
         with gr.Column():
-            output_video = gr.Video(label="Processed Video", streaming=True, autoplay=True)
+            output_video = gr.Video(
+                label="Processed Video", streaming=True, autoplay=True
+            )
 
     video.upload(
-        fn=stream_object_detection,
+        fn=stream_object_detection_from_video,
         inputs=[video, conf_threshold],
         outputs=[output_video],
     )
+from gradio_webrtc import WebRTC
+
+with gr.Blocks(css=css) as live_webcam_demo:
+    gr.HTML("<h1 style='text-align: center'>Live Webcam Object Detection</h1>")
+
+    with gr.Row():
+        conf_slider = gr.Slider(
+            label="Confidence Threshold",
+            minimum=0.0,
+            maximum=1.0,
+            step=0.05,
+            value=0.3,
+        )
+        toggle_btn = gr.Button("Start Detection")
+    
+    with gr.Row():    
+        with gr.Column():
+            # 实时视频输入与结果显示
+            stream_view = WebRTC(
+                label="Live Detection",
+                mode="sendrecv",  # 必须设置
+                modality="video",  # 启用视频处理
+                # streaming=True           # 必须打开
+            )
+            
+        with gr.Column():
+            image_output = gr.Image(label="🎯 Detection Result", interactive=False)
+            
+    # 将处理结果输出到右侧 Image 组件
+    stream_view.stream(
+        fn=detect_frame_controlled_for_display,
+        inputs=[stream_view, conf_slider],
+        outputs=[image_output]
+    )
+    # 实时帧处理绑定
+    # stream_view.stream(
+    #     fn=detect_frame_controlled, inputs=[stream_view, conf_slider], outputs=stream_view
+    # )
+    # 控制识别状态的按钮
+    toggle_btn.click(fn=toggle_recognition, inputs=[], outputs=[toggle_btn])
+
 
 API_OPEN = True
 with gr.Blocks() as app:
     with gr.Row():
         with gr.Column():
-            text = gr.Textbox(label='Input Text', info=f"Arbitrarily many characters supported")
+            text = gr.Textbox(
+                label="Input Text", info=f"Arbitrarily many characters supported"
+            )
             with gr.Row():
-                voice = gr.Dropdown(list(CHOICES.items()), value=DEFAULT_VOICE, label='Voice', info='Quality and availability vary by language')
-                use_gpu = gr.Dropdown(
-                    [('ZeroGPU 🚀', True), ('CPU 🐌', False)],
-                    value=CUDA_AVAILABLE,
-                    label='Hardware',
-                    info='GPU is usually faster, but has a usage quota',
-                    interactive=CUDA_AVAILABLE
+                voice = gr.Dropdown(
+                    list(AUDIO_CHOICES.items()),
+                    value=DEFAULT_VOICE,
+                    label="Voice",
+                    info="Quality and availability vary by language",
                 )
-            speed = gr.Slider(minimum=0.5, maximum=2, value=1, step=0.1, label='Speed')
-            random_btn = gr.Button('🎲 Random Quote 💬', variant='secondary')
+                use_gpu = gr.Dropdown(
+                    [("ZeroGPU 🚀", True), ("CPU 🐌", False)],
+                    value=CUDA_AVAILABLE,
+                    label="Hardware",
+                    info="GPU is usually faster, but has a usage quota",
+                    interactive=CUDA_AVAILABLE,
+                )
+            speed = gr.Slider(minimum=0.5, maximum=2, value=1, step=0.1, label="Speed")
+            random_btn = gr.Button("🎲 Random Quote 💬", variant="secondary")
             with gr.Row():
-                gatsby_btn = gr.Button('🥂 Gatsby 📕', variant='secondary')
-                frankenstein_btn = gr.Button('💀 Frankenstein 📗', variant='secondary')
+                gatsby_btn = gr.Button("🥂 Gatsby 📕", variant="secondary")
+                frankenstein_btn = gr.Button("💀 Frankenstein 📗", variant="secondary")
         with gr.Column():
-            gr.TabbedInterface([generate_tab, stream_tab,stream_video], ['Generate', 'Stream','Stream_Video'])
+            gr.TabbedInterface(
+                [generate_tab, stream_tab, stream_video, live_webcam_demo],
+                ["Generate", "Stream", "Stream_Video", "live_webcam_demo"],
+            )
     random_btn.click(fn=get_random_quote, inputs=[], outputs=[text])
     gatsby_btn.click(fn=get_gatsby, inputs=[], outputs=[text])
     frankenstein_btn.click(fn=get_frankenstein, inputs=[], outputs=[text])
-    generate_btn.click(fn=generate_first, inputs=[text, voice, speed, use_gpu], outputs=[out_audio, out_ps])
+    generate_btn.click(
+        fn=generate_first,
+        inputs=[text, voice, speed, use_gpu],
+        outputs=[out_audio, out_ps],
+    )
     tokenize_btn.click(fn=tokenize_first, inputs=[text, voice], outputs=[out_ps])
-    stream_event = stream_btn.click(fn=generate_all, inputs=[text, voice, speed, use_gpu], outputs=[out_stream])
+    stream_event = stream_btn.click(
+        fn=generate_all, inputs=[text, voice, speed, use_gpu], outputs=[out_stream]
+    )
     stop_btn.click(fn=None, cancels=stream_event)
     predict_btn.click(fn=predict, inputs=[text, voice, speed], outputs=[out_audio])
 
 
-if __name__ == '__main__':
-    app.queue(api_open=API_OPEN).launch(server_name="0.0.0.0", server_port=40001, show_api=API_OPEN)
+if __name__ == "__main__":
+    app.queue(api_open=API_OPEN).launch(
+        server_name="0.0.0.0",
+        server_port=40001,
+        show_api=API_OPEN,
+        share=True,
+        debug=True,
+    )

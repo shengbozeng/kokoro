@@ -71,8 +71,6 @@ class KModel(torch.nn.Module):
         else:
             logger.info("Model not provided or not found. Downloading from HuggingFace.")
             model = hf_hub_download(repo_id=repo_id, filename=KModel.MODEL_NAMES[repo_id])
-        # if not model:
-        #     model = hf_hub_download(repo_id=repo_id, filename=KModel.MODEL_NAMES[repo_id])
         for key, state_dict in torch.load(model, map_location='cpu', weights_only=True).items():
             assert hasattr(self, key), key
             try:

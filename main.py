@@ -2,7 +2,7 @@
  * @Author: Zeng Shengbo shengbo.zeng@ailingues.com
  * @Date: 2025-06-05 18:26:58
  * @LastEditors: Zeng Shengbo shengbo.zeng@ailingues.com
- * @LastEditTime: 2025-06-05 18:48:09
+ * @LastEditTime: 2025-06-15 16:45:21
  * @FilePath: \\kokoro\\main.py
  * @Description: 
  ********************************************************** '''
@@ -23,7 +23,7 @@ os.environ["https_proxy"] = "http://127.0.0.1:20171"
 # 🇯🇵 'j' => Japanese: pip install misaki[ja]
 # 🇧🇷 'p' => Brazilian Portuguese pt-br
 # 🇨🇳 'z' => Mandarin Chinese: pip install misaki[zh]
-pipeline = KPipeline(lang_code='z',repo_id='hexgrad/Kokoro-82M-v1.1-zh') # <= make sure lang_code matches voice, reference above.
+pipeline = KPipeline(lang_code='z',repo_id='csukuangfj/kokoro-multi-lang-v1_1') # <= make sure lang_code matches voice, reference above.
 
 # This text is for demonstration purposes only, unseen during training
 # text = '''
